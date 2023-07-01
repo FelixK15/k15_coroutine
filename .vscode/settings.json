@@ -1,0 +1,11 @@
+{
+    "C_Cpp.default.defines": ["K15_COROUTINE_IMPLEMENTATION", "WIN32", "K15_COROUTINE_PLATFORM_INCLUDE_GUARD"],
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.cStandard": "c11",
+    "C_Cpp.default.includePath": ["win32", ".."],
+
+    "files.associations": {
+        "k15_coroutine.h": "cpp",
+        "k15_win32_coroutine_implementation.h": "cpp",
+    }
+}
