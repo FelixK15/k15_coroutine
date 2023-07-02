@@ -1,7 +1,7 @@
 **Note that this project is currently in development. Features are still missing, stuff is still being build.**
 
 ## What does this project try to do? (ELI5)
-This project tries to implement coroutines (https://en.wikipedia.org/wiki/Coroutine) as a portable C library.
+This project tries to implement [coroutines](https://en.wikipedia.org/wiki/Coroutine) as a portable C library.
 
 ## How do I build this software locally?
 Currently the codebase can only be build on a x64 Windows machine with Microsoft Visual Studio installed.
@@ -11,8 +11,8 @@ Note: You don't necesseraly *have* to have Visual Studio installed - it's enough
 Additionally, the linker has to be able to resolve os library and c stdlib calls.
 
 ## How does this work?
-The first idea was to build coroutines on top of fibers (https://en.wikipedia.org/wiki/Fiber_(computer_science)) since they're lightweight and allow easy context-switching without having to spawn full blown threads.
-But after reading the excellent [https://graphitemaster.github.io/fibers/](Fibers, Oh My!) blog post by Dale Weiler I realized that this can be implemented without having to use fibers at all.
+The first idea was to build coroutines on top of [fibers](https://en.wikipedia.org/wiki/Fiber_(computer_science)) since they're lightweight and allow easy context-switching without having to spawn full blown threads.
+But after reading the excellent [Fibers, Oh My!](https://graphitemaster.github.io/fibers/) blog post by Dale Weiler I realized that this can be implemented without having to use fibers at all.
 
 The way coroutine context switching is implemented is by storing the current cpu state and pre-allocating seperate stacks for each coroutine. When a coroutine is created and should run for the first time, the cpu state of the main thread is safed ("main thread" = the code that passes execution over to the coroutine - technically, coroutines also run on the main thread but for simplification, I'll refer to the coroutine callee as the "main thread") and a pre-allocated stack is assigned to the rsp. Then the arguments for the coroutine get prepared and then the code calls into the coroutine function.
 
