@@ -3,6 +3,10 @@
 ## What does this project try to do? (ELI5)
 This project tries to implement [coroutines](https://en.wikipedia.org/wiki/Coroutine) as a portable C library.
 
+## Where can I find the code?
+The usage code for the library is in [win32\k15_win32_coroutine_test.c](/win32/k15_win32/coroutine_test.c).
+The code of the actualy library is inside [k15_coroutine.h](k15_coroutine.h) & [arch\x64\k15_cpu_state.asm](arch\x64\k15_cpu_state.asm)
+
 ## How do I build this software locally?
 Currently the codebase can only be build on a x64 Windows machine with Microsoft Visual Studio installed.
 If these requirements are met, simply run the `build_cl.bat`  inside the `win32` directory - This should spawn a `cl.exe` & `ml64.exe` instance which will compile the project and output the executible. In case you want to build a debug version, pass the argument `debug` to the build scripts.
