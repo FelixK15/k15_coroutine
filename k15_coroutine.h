@@ -101,6 +101,7 @@ uint32_t _k15_query_page_size();
 #include <malloc.h>
 #include <stdbool.h>
 #include <math.h>
+#include <string.h>
 
 #ifndef K15_COROUTINE_ERROR_LOG
 #include <stdio.h>
@@ -111,6 +112,8 @@ uint32_t _k15_query_page_size();
 #include <assert.h>
 #define K15_COROUTINE_ASSERT(cond) assert(cond)
 #endif //K15_COROUTINE_ASSERT
+
+#define K15_MAX(a,b) ((a)>(b)?(a):(b))
 
 #define K15_DIVIDE_BY_64(x) ((x)>>6)
 
@@ -257,7 +260,7 @@ void _k15_schedule_coroutine(k15_coroutine* pCoroutine)
 #define K15_COROUTINE_PLATFORM_INCLUDE_GUARD
 
 #ifdef _WIN32 
-#include "win32/k15_win32_coroutine_implementation.h"
+#include "win32/k15_win32_page_helper.h"
 #else
 #error "Platform not supported"
 #endif
@@ -270,7 +273,7 @@ size_t k15_calculate_coroutine_system_memory_requirements(const uint32_t maxCoro
     const uint64_t stackProtectPages = maxCoroutineCount * k15_page_size_in_bytes;
     const uint64_t totalStackMemorySizeInBytes = alignedStackSizeInBytes + stackProtectPages;
 
-    const uint64_t coroutineUsageMaskCount = max(1u, K15_DIVIDE_BY_64(maxCoroutineCount));
+    const uint64_t coroutineUsageMaskCount = K15_MAX(1u, K15_DIVIDE_BY_64(maxCoroutineCount));
     const uint64_t systemSizeInBytes = sizeof(k15_coroutine_system) + maxCoroutineCount * sizeof(k15_coroutine) + coroutineUsageMaskCount * sizeof(uint64_t);
 
     return k15_page_align(totalStackMemorySizeInBytes + systemSizeInBytes);
@@ -341,7 +344,7 @@ k15_coroutine_system* k15_create_coroutine_system_with_parameter(const k15_corou
 
     memset(pParameter->pMemory, 0, pParameter->memorySizeInBytes);
     
-    const uint64_t coroutineUsageMaskCount = max(1u, K15_DIVIDE_BY_64(pParameter->maxCoroutineCount));
+    const uint64_t coroutineUsageMaskCount = K15_MAX(1u, K15_DIVIDE_BY_64(pParameter->maxCoroutineCount));
     const uint64_t memoryRequirementsInBytes = sizeof(k15_coroutine_system) + 
         pParameter->maxCoroutineCount * sizeof(k15_coroutine) + 
         coroutineUsageMaskCount * sizeof(uint64_t);
