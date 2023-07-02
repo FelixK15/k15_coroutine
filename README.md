@@ -20,4 +20,5 @@ The way coroutine context switching is implemented is by storing the current cpu
 
  Throw in some nasty stack return address patching and, for a first prototype, this actually works.
 
- Please note that this is a super bare minimum prototype which I'm planning on extending in the future.
+
+ **Please note that this is a super bare minimum prototype which is basically just a proof of concept for now**
