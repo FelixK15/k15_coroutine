@@ -15,25 +15,22 @@ DWORD WINAPI _k15_win32_coroutine_thread_entry_point(LPVOID pParameter)
     return 0u;
 }
 
-uint64_t _k15_get_size_of_coroutine_platform_implementation()
+void _k15_set_page_as_read_only(void* pMemoryPageAddress)
 {
-    return sizeof(k15_win32_coroutine_platform_implementation);
+    K15_COROUTINE_ASSERT(_k15_is_page_aligned((size_t)pMemoryPageAddress));
+
+    DWORD oldPageProtection = 0;
+    const BOOL result = VirtualProtect(pMemoryPageAddress, k15_page_size_in_bytes, PAGE_READONLY, &oldPageProtection);
+    if(result == 0)
+    {
+        K15_COROUTINE_ERROR_LOG("Error during VirtualProtect()");
+    }
 }
 
-bool _k15_create_coroutine_system_platform_implementation(k15_coroutine_platform_implementation* pOutPlatformImplementation, void* pMemory, uint64_t memorySizeInBytes)
+uint32_t _k15_query_page_size()
 {
-    uint8_t* pMemoryBlock = (uint8_t*)pMemory;
+    SYSTEM_INFO systemInfo = {};
+    GetSystemInfo(&systemInfo);
 
-    k15_win32_coroutine_platform_implementation* pWin32Implementation = (k15_win32_coroutine_platform_implementation*)pMemoryBlock;
-    pMemoryBlock += sizeof(k15_win32_coroutine_platform_implementation);
-    memorySizeInBytes -= sizeof(k15_win32_coroutine_platform_implementation);
-
-    constexpr size_t threadStackSizeInBytes = 1024*1024;
-    HANDLE pCoroutineThread = CreateThread(nullptr, threadStackSizeInBytes, _k15_win32_coroutine_thread_entry_point, nullptr, CREATE_SUSPENDED, nullptr);
-    if(pCoroutineThread == nullptr)
-    {
-        return false;
-    }
-
-    return true;
+    return systemInfo.dwPageSize;
 }

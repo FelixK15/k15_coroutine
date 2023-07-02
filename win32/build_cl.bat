@@ -108,8 +108,10 @@ if not exist "!OUTPUT_FOLDER!" (
 )
 
 set COMPILER_EXE_PATH_SCRIPT_PATH=!SCRIPT_DIRECTORY!find_cl_exe_path.bat
+set ASSEMBLER_EXE_PATH_SCRIPT_PATH=!SCRIPT_DIRECTORY!find_ml_exe_path.bat
 set VCVARS_PATH_SCRIPT_PATH=!SCRIPT_DIRECTORY!find_vcvars_path.bat
 set COMPILER_EXE_REPOSITORY_PATH=https://raw.githubusercontent.com/FelixK15/k15_batch_scripts/main/find_cl_exe_path.bat
+set ASSEMBLER_EXE_REPOSITORY_PATH=https://raw.githubusercontent.com/FelixK15/k15_batch_scripts/main/find_ml_exe_path.bat
 set VCVARS_REPOSITORY_PATH=https://raw.githubusercontent.com/FelixK15/k15_batch_scripts/main/find_vcvars_path.bat
 
 set DOWNLOAD_SCRIPT=!FORCE_SCRIPT_DOWNLOAD!
@@ -119,17 +121,18 @@ if not exist !COMPILER_EXE_PATH_SCRIPT_PATH! (
 
 if !DOWNLOAD_SCRIPT! equ 1 (
     ::FK: Download file from github repository
-    call bitsadmin.exe /transfer compiler_script_download_job /priority HIGH !COMPILER_EXE_REPOSITORY_PATH! !COMPILER_EXE_PATH_SCRIPT_PATH! !VCVARS_REPOSITORY_PATH! !VCVARS_PATH_SCRIPT_PATH!
+    call bitsadmin.exe /transfer compiler_script_download_job /priority HIGH !ASSEMBLER_EXE_REPOSITORY_PATH! !ASSEMBLER_EXE_PATH_SCRIPT_PATH! !COMPILER_EXE_REPOSITORY_PATH! !COMPILER_EXE_PATH_SCRIPT_PATH! !VCVARS_REPOSITORY_PATH! !VCVARS_PATH_SCRIPT_PATH!
 
     if not ERRORLEVEL 0 (
-        echo Error trying to download script from '!COMPILER_EXE_REPOSITORY_PATH!' & '!VCVARS_REPOSITORY_PATH!'. Please check your internet connection.
+        echo Error trying to download script from '!ASSEMBLER_EXE_REPOSITORY_PATH!', '!COMPILER_EXE_REPOSITORY_PATH!' & '!VCVARS_REPOSITORY_PATH!'. Please check your internet connection.
         set errorlevel=2
         goto ERROR_FAILURE
     )
 )
 
-::FK: Populate COMPILER_PATH env var
+::FK: Populate COMPILER_PATH & ASSEMBLER_PATH env var
 call !COMPILER_EXE_PATH_SCRIPT_PATH!
+call !ASSEMBLER_EXE_PATH_SCRIPT_PATH!
 
 (for %%a in (!C_FILES!) do ( 
    set C_FILES_CONCATENATED="!SCRIPT_DIRECTORY!!SOURCE_FOLDER!%%a" !C_FILES_CONCATENATED!
@@ -140,6 +143,21 @@ call !COMPILER_EXE_PATH_SCRIPT_PATH!
 ))
 
 echo compiling build configuration !BUILD_CONFIGURATION!...
+
+if "!ASM_OPTIONS!" equ "" (
+    set DEFAULT_ASM_OPTIONS=/c /Zd
+    set ASM_OPTIONS=!DEFAULT_ASM_OPTIONS!
+)
+
+(for %%a in (!ASM_FILES!) do (
+    ::FK: Get file name from .asm file and change the file ending to .obj
+    set ASM_FILE="!SCRIPT_DIRECTORY!!SOURCE_FOLDER!%%a"
+    for /F "delims=" %%i in (!ASM_FILE!) do set ASM_OUTPUT_FILE_NAME=%%~nxi
+    set ASM_OUTPUT_FILE_NAME=!ASM_OUTPUT_FILE_NAME:~0,-4!.obj
+    
+    set ASSEMBLE_COMMAND="!ASSEMBLER_PATH!" !ASM_OPTIONS! /Fo!OUTPUT_FOLDER!\!ASM_OUTPUT_FILE_NAME! !ASM_FILE!
+    !ASSEMBLE_COMMAND!
+))
 
 set COMPILER_OPTIONS=!COMPILER_OPTIONS! !INCLUDE_DIRS_CONCATENATED! /Fe!OUTPUT_FOLDER!\!OUTPUT_FILE_NAME!
 set COMPILE_COMMAND="!COMPILER_PATH!" !COMPILER_OPTIONS! !C_FILES_CONCATENATED! /link !LINKER_OPTIONS!

@@ -6,6 +6,7 @@
 
     "files.associations": {
         "k15_coroutine.h": "cpp",
+        "k15_win32_coroutine_test.c": "cpp",
         "k15_win32_coroutine_implementation.h": "cpp",
     }
 }

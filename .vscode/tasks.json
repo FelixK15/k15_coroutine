@@ -17,7 +17,7 @@
                 ],
                 "type": "shell",
                 "options": {
-                    "cwd": "win32"
+                    "cwd": "win32",
                 },
                 "problemMatcher": [
                     "$msCompile"
