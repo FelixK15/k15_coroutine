@@ -11,7 +11,7 @@ struct k15_coroutine_handle
     uint32_t index;
 };
 
-typedef const k15_coroutine_status* (*k15_coroutine_function)(void*);
+typedef void (*k15_coroutine_function)(void*);
 
 struct k15_coroutine_system_parameter
 {
@@ -43,8 +43,7 @@ k15_coroutine_handle            k15_register_and_start_coroutine_with_args(k15_c
 void                            k15_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle pHandle);
 void                            k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle pHandle);
 
-const k15_coroutine_status*     k15_yield_coroutine_until_next_frame();
-const k15_coroutine_status*     k15_yield_stop_coroutine();
+void                            k15_yield_coroutine_until_next_frame();
 
 template<typename T>
 k15_coroutine_handle            k15_register_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, T* pArguments)
@@ -391,7 +390,7 @@ void k15_destroy_coroutine_system(k15_coroutine_system* pSystem)
 
     if(pSystem->flags & k15_coroutine_system_flag_self_allocated)
     {
-        free(pSystem->pMemory);
+        k15_free_page_aligned(pSystem->pMemory);
     }
 }
 
@@ -485,15 +484,9 @@ void k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_ha
     pCoroutine->status.alive = 0;
 }
 
-const k15_coroutine_status* k15_yield_coroutine_until_next_frame()
+void k15_yield_coroutine_until_next_frame()
 {
     k15_yield_asm();
-    return nullptr;
-}
-
-const k15_coroutine_status* k15_stop_coroutine()
-{
-    return nullptr;
 }
 
 #endif //K15_COROUTINE_IMPLEMENTATION

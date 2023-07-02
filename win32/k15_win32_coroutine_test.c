@@ -3,11 +3,16 @@
 
 #include <stdio.h>
 
-const k15_coroutine_status* coroutine_test(void*)
+extern "C"
+{
+    void Sleep(uint32_t);   
+}
+
+int i = 0;
+
+void coroutine_test(void*)
 {
     printf("=> Hello from coroutine start!\n");
-    int i = 0;
-    
     while(true)
     {
         printf("=> local coroutine variable current run: %d\n", i);
@@ -20,7 +25,7 @@ const k15_coroutine_status* coroutine_test(void*)
     }
 
     printf("=> Bye from coroutine start!\n");
-    return nullptr;
+    return;
 }
 
 int main()
@@ -28,13 +33,12 @@ int main()
     k15_coroutine_system* pCoroutineSystem = k15_create_coroutine_system();
     k15_register_and_start_coroutine(pCoroutineSystem, coroutine_test);
 
-    while(true)
+    while(i < 11)
     {
         k15_update_coroutine_system(pCoroutineSystem);
         printf("Hello from main()!\n");
         Sleep(16);
     }
 
-    k15_destroy_coroutine_system(pCoroutineSystem);
     return 0;
 }
