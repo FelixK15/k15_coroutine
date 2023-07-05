@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 struct k15_coroutine_system;
-struct k15_coroutine_status;
 
 struct k15_coroutine_handle
 {
@@ -65,7 +64,18 @@ struct k15_cpu_state
     void* r13;
     void* r14;
     void* r15;
-};
+
+    void* xmm6[4];
+    void* xmm7[4];
+    void* xmm8[4];
+    void* xmm9[4];
+    void* xmm10[4];
+    void* xmm11[4];
+    void* xmm12[4];
+    void* xmm13[4];
+    void* xmm14[4];
+    void* xmm15[4];
+}; //sizeof == 50
 
 struct k15_coroutine;
 
@@ -83,8 +93,9 @@ extern "C"
 
     extern void     k15_yield_asm();
 
+    thread_local k15_coroutine* pActiveCoroutine = nullptr;
+    
     void*          pMainThreadStackPtr = nullptr;
-    k15_coroutine* pActiveCoroutine = nullptr;
     k15_cpu_state  mainThreadCpuState  = {};
     k15_cpu_state* pMainThreadCpuState = &mainThreadCpuState;
 };
@@ -119,19 +130,23 @@ uint32_t _k15_query_page_size();
 constexpr uint64_t k15_default_coroutine_system_memory_size_in_bytes = 1024u*1024u;
 constexpr uint32_t k15_coroutine_system_flag_self_allocated = (1<<0);
 
-struct k15_coroutine_status
+enum k15_coroutine_status : uint8_t
 {
-    uint64_t alive;
-    uint64_t scheduled;
+    K15_COROUTINE_STATUS_SCHEDULED = 0,
+    K15_COROUTINE_STATUS_RUNNING,
+    K15_COROUTINE_STATUS_DEAD,
+    K15_COROUTINE_STATUS_NON_SCHEDULED
 };
 
 struct k15_coroutine
 {
-    k15_coroutine_status    status;
-    k15_coroutine_function  pFunction;
-    void*                   pArguments;
-    void*                   pStack;
-    k15_cpu_state           cpuState;
+    k15_coroutine_function          pFunction;
+    void*                           pArguments;
+    void*                           pStack;
+    void*                           pPrevStack;
+    k15_cpu_state                   prevCpuState;
+    k15_cpu_state                   cpuState;
+    k15_coroutine_status            status;
 };
 
 struct k15_coroutine_platform_implementation
@@ -141,6 +156,7 @@ struct k15_coroutine_platform_implementation
 
 struct k15_coroutine_system
 {
+    const k15_coroutine*                    pActiveCoroutine;
     k15_coroutine*                          pCoroutines;
     uint64_t*                               pCoroutineUsageMask;
     void*                                   pMemory;
@@ -233,26 +249,24 @@ uint32_t _k15_register_coroutine(k15_coroutine_system* pSystem, k15_coroutine_fu
 
     pSystem->pCoroutines[coroutineIndex].pFunction  = pFunction;
     pSystem->pCoroutines[coroutineIndex].pArguments = pArguments;
+    pSystem->pCoroutines[coroutineIndex].status     = K15_COROUTINE_STATUS_NON_SCHEDULED;
+
     return coroutineIndex;
 }
 
 void _k15_continue_coroutine(k15_coroutine* pCoroutine)
 {
-    pActiveCoroutine = pCoroutine;
-    k15_continue_coroutine_asm(pActiveCoroutine);
-    pActiveCoroutine = nullptr;
+    k15_continue_coroutine_asm(pCoroutine);
 }
 
 void _k15_start_coroutine(k15_coroutine* pCoroutine)
 {
-    pActiveCoroutine = pCoroutine;
-    k15_start_coroutine_asm(pActiveCoroutine);
-    pActiveCoroutine = nullptr;
+    k15_start_coroutine_asm(pCoroutine);
 }
 
 void _k15_schedule_coroutine(k15_coroutine* pCoroutine)
 {
-    pCoroutine->status.scheduled = 1;
+    pCoroutine->status = K15_COROUTINE_STATUS_SCHEDULED;
     _k15_start_coroutine(pCoroutine);
 }
 
@@ -413,16 +427,13 @@ void k15_update_coroutine_system(k15_coroutine_system* pCoroutineSystem)
         if(pCoroutineSystem->pCoroutineUsageMask[coroutineMaskIndex] & coroutineMaskBit)
         {
             k15_coroutine* pCoroutine = pCoroutineSystem->pCoroutines + coroutineIndex;
-            if(pCoroutine->status.alive == 1)
+            if(pCoroutine->status == K15_COROUTINE_STATUS_NON_SCHEDULED)
             {
-                if(pCoroutine->status.scheduled == 0)
-                {
-                    _k15_schedule_coroutine(pCoroutine);
-                }
-                else
-                {
-                    _k15_continue_coroutine(pCoroutine);
-                }
+                _k15_schedule_coroutine(pCoroutine);
+            }
+            else if(pCoroutine->status == K15_COROUTINE_STATUS_SCHEDULED)
+            {
+                _k15_continue_coroutine(pCoroutine);
             }
         }
     }
@@ -445,8 +456,6 @@ k15_coroutine_handle k15_register_and_start_coroutine(k15_coroutine_system* pCor
     k15_coroutine_handle handle = {};
     handle.index = _k15_register_coroutine(pCoroutineSystem, pFunction, nullptr, 0u);
 
-    pCoroutineSystem->pCoroutines[handle.index].status.alive        = 0;
-    pCoroutineSystem->pCoroutines[handle.index].status.scheduled    = 0;
     k15_start_coroutine(pCoroutineSystem, handle);
 
     return handle;
@@ -471,8 +480,7 @@ void k15_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_h
     K15_COROUTINE_ASSERT(_k15_is_valid_handle(pCoroutineSystem->pCoroutineUsageMask, pCoroutineSystem->maxCoroutineCount, handle));
     k15_coroutine* pCoroutine = &pCoroutineSystem->pCoroutines[handle.index];
 
-    K15_COROUTINE_ASSERT(pCoroutine->status.alive == 0);
-    pCoroutine->status.alive = 1;
+    K15_COROUTINE_ASSERT(pCoroutine->status == K15_COROUTINE_STATUS_NON_SCHEDULED);
 }
 
 void k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle handle)
@@ -480,8 +488,7 @@ void k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_ha
     K15_COROUTINE_ASSERT(_k15_is_valid_handle(pCoroutineSystem->pCoroutineUsageMask, pCoroutineSystem->maxCoroutineCount, handle));
     k15_coroutine* pCoroutine = &pCoroutineSystem->pCoroutines[handle.index];
 
-    K15_COROUTINE_ASSERT(pCoroutine->status.alive == 1);
-    pCoroutine->status.alive = 0;
+    K15_COROUTINE_ASSERT(pCoroutine->status == K15_COROUTINE_STATUS_SCHEDULED);
 }
 
 void k15_yield_coroutine_until_next_frame()

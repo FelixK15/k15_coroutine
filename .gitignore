@@ -1,0 +1,4 @@
+win32/build
+*.obj
+*.pdb
+.cached_path
