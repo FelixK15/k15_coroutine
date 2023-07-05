@@ -5,6 +5,12 @@
 
 struct k15_coroutine_system;
 
+enum k15_coroutine_system_flags : uint32_t
+{
+    K15_COROUTINE_SYSTEM_SELF_ALLOCATED_FLAG        = (1<<0),
+    K15_COROUTINE_SYSTEM_SET_THREAD_CONTEXT_FLAG    = (1<<1)
+};
+
 struct k15_coroutine_handle
 {
     uint32_t index;
@@ -33,21 +39,34 @@ k15_coroutine_system*           k15_create_coroutine_system_with_parameter(const
 void                            k15_destroy_coroutine_system(k15_coroutine_system* pCoroutineSystem);
 void                            k15_update_coroutine_system(k15_coroutine_system* pCoroutineSystem);
 
-k15_coroutine_handle            k15_register_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction);
-k15_coroutine_handle            k15_register_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes);
+k15_coroutine_handle            k15_create_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction);
+k15_coroutine_handle            k15_create_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes);
 
-k15_coroutine_handle            k15_register_and_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction);
-k15_coroutine_handle            k15_register_and_start_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments);
+k15_coroutine_handle            k15_create_and_resume_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction);
+k15_coroutine_handle            k15_create_and_resume_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments);
 
-void                            k15_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle pHandle);
+void                            k15_resume_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle pHandle);
 void                            k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle pHandle);
 
-void                            k15_yield_coroutine_until_next_frame();
+void                            k15_set_thread_local_coroutine_system(k15_coroutine_system* pCoroutineSystem);
+
+void                            k15_yield();
+
+//Context-less functions
+k15_coroutine_handle            k15_create_coroutine(k15_coroutine_function pFunction);
+k15_coroutine_handle            k15_create_coroutine_with_args(k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes);
+
+k15_coroutine_handle            k15_create_and_resume_coroutine(k15_coroutine_function pFunction);
+k15_coroutine_handle            k15_create_and_resume_coroutine_with_args(k15_coroutine_function pFunction, void* pArguments);
+
+void                            k15_resume_coroutine(k15_coroutine_handle pHandle);
+void                            k15_stop_coroutine(k15_coroutine_handle pHandle);
+
 
 template<typename T>
-k15_coroutine_handle            k15_register_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, T* pArguments)
+k15_coroutine_handle            k15_create_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, T* pArguments)
 {
-    return k15_register_coroutine_with_args(pCoroutineSystem, pFunction, (void*)pArguments, sizeof(T));
+    return k15_create_coroutine_with_args(pCoroutineSystem, pFunction, (void*)pArguments, sizeof(T));
 }
 
 #ifdef K15_COROUTINE_IMPLEMENTATION
@@ -75,7 +94,7 @@ struct k15_cpu_state
     void* xmm13[4];
     void* xmm14[4];
     void* xmm15[4];
-}; //sizeof == 50
+};
 
 struct k15_coroutine;
 
@@ -83,7 +102,7 @@ struct k15_coroutine;
 extern "C"
 {
     extern void     k15_start_coroutine_asm(k15_coroutine* pCoroutine);
-    extern void     k15_continue_coroutine_asm(k15_coroutine* pCoroutine);
+    extern void     k15_resume_coroutine_asm(k15_coroutine* pCoroutine);
 
     extern void     k15_store_cpu_state(k15_cpu_state* pState);
     extern void     k15_apply_cpu_state(const k15_cpu_state* pState);
@@ -91,19 +110,11 @@ extern "C"
     extern void*    k15_get_stack_pointer();
     extern void     k15_set_stack_pointer(void* pStackPointer);
 
-    extern void     k15_yield_asm();
+    extern void     k15_yield_asm(k15_coroutine* pCoroutine);
 
-    thread_local k15_coroutine* pActiveCoroutine = nullptr;
-    
-    void*          pMainThreadStackPtr = nullptr;
-    k15_cpu_state  mainThreadCpuState  = {};
-    k15_cpu_state* pMainThreadCpuState = &mainThreadCpuState;
+    thread_local k15_coroutine*         pThreadLocalActiveCoroutine = nullptr;
+    thread_local k15_coroutine_system*  pThreadLocalCoroutineSystem = nullptr;
 };
-
-void k15_stop_coroutine_asm(k15_coroutine* pCoroutine)
-{
-
-}
 
 //FK: Implemented by platform header
 uint32_t _k15_query_page_size();
@@ -115,7 +126,7 @@ uint32_t _k15_query_page_size();
 
 #ifndef K15_COROUTINE_ERROR_LOG
 #include <stdio.h>
-#define K15_COROUTINE_ERROR_LOG(msg, ...) printf(msg, __VA_ARGS__)
+#define K15_COROUTINE_ERROR_LOG(msg, ...) printf("%s\n", msg, __VA_ARGS__)
 #endif //K15_COROUTINE_ERROR_LOG
 
 #ifndef K15_COROUTINE_ASSERT
@@ -128,7 +139,6 @@ uint32_t _k15_query_page_size();
 #define K15_DIVIDE_BY_64(x) ((x)>>6)
 
 constexpr uint64_t k15_default_coroutine_system_memory_size_in_bytes = 1024u*1024u;
-constexpr uint32_t k15_coroutine_system_flag_self_allocated = (1<<0);
 
 enum k15_coroutine_status : uint8_t
 {
@@ -143,20 +153,14 @@ struct k15_coroutine
     k15_coroutine_function          pFunction;
     void*                           pArguments;
     void*                           pStack;
-    void*                           pPrevStack;
+    k15_coroutine*                  pPrevCoroutine;
     k15_cpu_state                   prevCpuState;
     k15_cpu_state                   cpuState;
     k15_coroutine_status            status;
 };
 
-struct k15_coroutine_platform_implementation
-{
-    void* pImplementation;
-};
-
 struct k15_coroutine_system
 {
-    const k15_coroutine*                    pActiveCoroutine;
     k15_coroutine*                          pCoroutines;
     uint64_t*                               pCoroutineUsageMask;
     void*                                   pMemory;
@@ -183,7 +187,7 @@ bool _k15_set_default_coroutine_parameter(k15_coroutine_system_parameter* pOutPa
     pOutParameter->maxCoroutineCount            = 32u;
     pOutParameter->coroutineStackSizeInBytes    = 1024u*1024u;
     pOutParameter->memorySizeInBytes            = requiredMemorySizeInBytes;
-    pOutParameter->flags                        = k15_coroutine_system_flag_self_allocated;
+    pOutParameter->flags                        = K15_COROUTINE_SYSTEM_SELF_ALLOCATED_FLAG | K15_COROUTINE_SYSTEM_SET_THREAD_CONTEXT_FLAG;
     return true;
 }
 
@@ -239,7 +243,7 @@ uint32_t _k15_get_next_coroutine_index(uint64_t* pCoroutineUsageMask, const uint
     return UINT32_MAX;
 }
 
-uint32_t _k15_register_coroutine(k15_coroutine_system* pSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes)
+uint32_t _k15_create_coroutine(k15_coroutine_system* pSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes)
 {
     uint32_t coroutineIndex = _k15_get_next_coroutine_index(pSystem->pCoroutineUsageMask, pSystem->maxCoroutineCount);
     if(coroutineIndex == UINT64_MAX)
@@ -254,14 +258,24 @@ uint32_t _k15_register_coroutine(k15_coroutine_system* pSystem, k15_coroutine_fu
     return coroutineIndex;
 }
 
-void _k15_continue_coroutine(k15_coroutine* pCoroutine)
+void _k15_resume_coroutine(k15_coroutine* pCoroutine)
 {
-    k15_continue_coroutine_asm(pCoroutine);
+    pCoroutine->pPrevCoroutine = pThreadLocalActiveCoroutine;
+    pThreadLocalActiveCoroutine = pCoroutine;
+
+    k15_resume_coroutine_asm(pCoroutine);
+
+    pThreadLocalActiveCoroutine = pCoroutine->pPrevCoroutine;
 }
 
 void _k15_start_coroutine(k15_coroutine* pCoroutine)
 {
+    pCoroutine->pPrevCoroutine = pThreadLocalActiveCoroutine;
+    pThreadLocalActiveCoroutine = pCoroutine;
+
     k15_start_coroutine_asm(pCoroutine);
+
+    pThreadLocalActiveCoroutine = pCoroutine->pPrevCoroutine;
 }
 
 void _k15_schedule_coroutine(k15_coroutine* pCoroutine)
@@ -277,7 +291,7 @@ void _k15_schedule_coroutine(k15_coroutine* pCoroutine)
 #else
 #error "Platform not supported"
 #endif
-
+ 
 #undef K15_COROUTINE_PLATFORM_INCLUDE_GUARD
 
 size_t k15_calculate_coroutine_system_memory_requirements(const uint32_t maxCoroutineCount, const uint32_t coroutineStackSizeInBytes)
@@ -394,6 +408,11 @@ k15_coroutine_system* k15_create_coroutine_system_with_parameter(const k15_corou
         pCoroutineStack -= k15_page_size_in_bytes;
     }
 
+    if(pParameter->flags & K15_COROUTINE_SYSTEM_SET_THREAD_CONTEXT_FLAG)
+    {
+        k15_set_thread_local_coroutine_system(pSystem);
+    }
+
     return pSystem;
 }
 
@@ -402,7 +421,7 @@ void k15_destroy_coroutine_system(k15_coroutine_system* pSystem)
     K15_COROUTINE_ASSERT(pSystem != nullptr);
     K15_COROUTINE_ASSERT(pSystem->pMemory != nullptr);
 
-    if(pSystem->flags & k15_coroutine_system_flag_self_allocated)
+    if(pSystem->flags & K15_COROUTINE_SYSTEM_SELF_ALLOCATED_FLAG)
     {
         k15_free_page_aligned(pSystem->pMemory);
     }
@@ -433,37 +452,41 @@ void k15_update_coroutine_system(k15_coroutine_system* pCoroutineSystem)
             }
             else if(pCoroutine->status == K15_COROUTINE_STATUS_SCHEDULED)
             {
-                _k15_continue_coroutine(pCoroutine);
+                _k15_resume_coroutine(pCoroutine);
             }
         }
     }
 }
 
-k15_coroutine_handle k15_register_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction)
+k15_coroutine_handle k15_create_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction)
 {
-    return k15_register_coroutine_with_args(pCoroutineSystem, pFunction, nullptr, 0u);
+    return k15_create_coroutine_with_args(pCoroutineSystem, pFunction, nullptr, 0u);
 }
 
-k15_coroutine_handle k15_register_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes)
+k15_coroutine_handle k15_create_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes)
 {
     k15_coroutine_handle handle = {};
-    handle.index = _k15_register_coroutine(pCoroutineSystem, pFunction, pArguments, argumentSizeInBytes);
+    handle.index = _k15_create_coroutine(pCoroutineSystem, pFunction, pArguments, argumentSizeInBytes);
     return handle;
 }
 
-k15_coroutine_handle k15_register_and_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction)
+k15_coroutine_handle k15_create_and_resume_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction)
 {
     k15_coroutine_handle handle = {};
-    handle.index = _k15_register_coroutine(pCoroutineSystem, pFunction, nullptr, 0u);
+    handle.index = _k15_create_coroutine(pCoroutineSystem, pFunction, nullptr, 0u);
 
-    k15_start_coroutine(pCoroutineSystem, handle);
+    k15_resume_coroutine(pCoroutineSystem, handle);
 
     return handle;
 }
 
-k15_coroutine_handle k15_register_and_start_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments)
+k15_coroutine_handle k15_create_and_resume_coroutine_with_args(k15_coroutine_system* pCoroutineSystem, k15_coroutine_function pFunction, void* pArguments)
 {
     k15_coroutine_handle handle = {};
+    handle.index = _k15_create_coroutine(pCoroutineSystem, pFunction, pArguments, 0u);
+
+    k15_resume_coroutine(pCoroutineSystem, handle);
+
     return handle;
 }
 
@@ -475,12 +498,20 @@ bool _k15_is_valid_handle(const uint64_t* pCoroutineMask, const uint32_t maxCoro
     return pCoroutineMask[coroutineMaskIndex] & coroutineMaskBit;
 }
 
-void k15_start_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle handle)
+void k15_resume_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle handle)
 {
     K15_COROUTINE_ASSERT(_k15_is_valid_handle(pCoroutineSystem->pCoroutineUsageMask, pCoroutineSystem->maxCoroutineCount, handle));
     k15_coroutine* pCoroutine = &pCoroutineSystem->pCoroutines[handle.index];
 
-    K15_COROUTINE_ASSERT(pCoroutine->status == K15_COROUTINE_STATUS_NON_SCHEDULED);
+    if(pCoroutine->status == K15_COROUTINE_STATUS_NON_SCHEDULED)
+    {
+        pCoroutine->status = K15_COROUTINE_STATUS_SCHEDULED;
+        _k15_start_coroutine(pCoroutine);
+    }
+    else if(pCoroutine->status == K15_COROUTINE_STATUS_SCHEDULED)
+    {
+        _k15_resume_coroutine(pCoroutine);
+    }
 }
 
 void k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_handle handle)
@@ -491,9 +522,44 @@ void k15_stop_coroutine(k15_coroutine_system* pCoroutineSystem, k15_coroutine_ha
     K15_COROUTINE_ASSERT(pCoroutine->status == K15_COROUTINE_STATUS_SCHEDULED);
 }
 
-void k15_yield_coroutine_until_next_frame()
+void k15_set_thread_local_coroutine_system(k15_coroutine_system* pCoroutineSystem)
 {
-    k15_yield_asm();
+    pThreadLocalCoroutineSystem = pCoroutineSystem;
+}
+
+void k15_yield()
+{
+    k15_yield_asm(pThreadLocalActiveCoroutine);
+}
+
+k15_coroutine_handle k15_create_coroutine(k15_coroutine_function pFunction)
+{
+    return k15_create_coroutine(pThreadLocalCoroutineSystem, pFunction);
+}
+
+k15_coroutine_handle k15_create_coroutine_with_args(k15_coroutine_function pFunction, void* pArguments, uint64_t argumentSizeInBytes)
+{
+    return k15_create_coroutine_with_args(pThreadLocalCoroutineSystem, pFunction, pArguments, argumentSizeInBytes);
+}
+
+k15_coroutine_handle k15_create_and_resume_coroutine(k15_coroutine_function pFunction)
+{
+    return k15_create_and_resume_coroutine(pThreadLocalCoroutineSystem, pFunction);
+}
+
+k15_coroutine_handle k15_create_and_resume_coroutine_with_args(k15_coroutine_function pFunction, void* pArguments)
+{
+    return k15_create_and_resume_coroutine_with_args(pThreadLocalCoroutineSystem, pFunction, pArguments);
+}
+
+void k15_resume_coroutine(k15_coroutine_handle handle)
+{
+    k15_resume_coroutine(pThreadLocalCoroutineSystem, handle);
+}
+
+void k15_stop_coroutine(k15_coroutine_handle handle)
+{
+    k15_stop_coroutine(pThreadLocalCoroutineSystem, handle);
 }
 
 #endif //K15_COROUTINE_IMPLEMENTATION
